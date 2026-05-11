@@ -32,14 +32,27 @@ jobs:
         run: brew install libomp
 
       - name: Configure CMake
-        run: >
-          cmake -S . -B build
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
-          -DBUILD_SHARED_LIBS=OFF
-          -DOPENVDB_CORE_SHARED=OFF
-          -DTBB_TEST=OFF
-          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        shell: bash
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DOPENVDB_CORE_SHARED=OFF \
+            -DTBB_TEST=OFF \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            2>&1 | tee cmake-configure.log
+
+      - name: Verify CMake found OpenMP
+        shell: bash
+        run: |
+          if grep -q "Found OpenMP" cmake-configure.log; then
+            echo "OK - CMake detected OpenMP:"
+            grep "Found OpenMP" cmake-configure.log
+          else
+            echo "::error::OpenMP not detected by CMake"
+            exit 1
+          fi
 
       - name: Build _coacd
         run: cmake --build build --target _coacd --config Release --parallel 4
@@ -47,6 +60,37 @@ jobs:
       - name: List outputs
         shell: bash
         run: find build -name "lib_coacd*" -type f
+
+      - name: Verify OpenMP linkage (Linux)
+        if: matrix.config.os == 'ubuntu-24.04'
+        run: |
+          echo "=== ldd output ==="
+          ldd build/lib_coacd.so
+          echo "=== checking libgomp ==="
+          ldd build/lib_coacd.so | grep -q libgomp || { echo "::error::libgomp not linked"; exit 1; }
+          echo "OK - libgomp linked"
+
+      - name: Verify OpenMP linkage (macOS)
+        if: matrix.config.os == 'macos-15'
+        run: |
+          echo "=== otool -L output ==="
+          otool -L build/lib_coacd.dylib
+          echo "=== checking libomp ==="
+          otool -L build/lib_coacd.dylib | grep -q libomp || { echo "::error::libomp not linked"; exit 1; }
+          echo "OK - libomp linked"
+
+      - name: Verify OpenMP linkage (Windows)
+        if: matrix.config.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          $bytes = [System.IO.File]::ReadAllBytes("build\Release\lib_coacd.dll")
+          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if ($text -match "VCOMP140\.DLL") {
+            Write-Host "OK - VCOMP140.DLL referenced (OpenMP linked)"
+          } else {
+            Write-Host "::error::VCOMP140.DLL not found in DLL imports"
+            exit 1
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
