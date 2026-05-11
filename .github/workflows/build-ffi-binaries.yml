@@ -34,14 +34,26 @@ jobs:
       - name: Configure CMake
         shell: bash
         run: |
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DOPENVDB_CORE_SHARED=OFF \
-            -DTBB_TEST=OFF \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-            2>&1 | tee cmake-configure.log
+          CMAKE_ARGS=(
+            -S . -B build
+            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+            -DBUILD_SHARED_LIBS=OFF
+            -DOPENVDB_CORE_SHARED=OFF
+            -DTBB_TEST=OFF
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          )
+          if [ "${{ matrix.config.os }}" = "macos-15" ]; then
+            LIBOMP=$(brew --prefix libomp)
+            CMAKE_ARGS+=(
+              "-DOpenMP_C_FLAGS=-Xclang -fopenmp -I${LIBOMP}/include"
+              "-DOpenMP_CXX_FLAGS=-Xclang -fopenmp -I${LIBOMP}/include"
+              "-DOpenMP_C_LIB_NAMES=omp"
+              "-DOpenMP_CXX_LIB_NAMES=omp"
+              "-DOpenMP_omp_LIBRARY=${LIBOMP}/lib/libomp.dylib"
+            )
+          fi
+          cmake "${CMAKE_ARGS[@]}" 2>&1 | tee cmake-configure.log
 
       - name: Verify CMake found OpenMP
         shell: bash
