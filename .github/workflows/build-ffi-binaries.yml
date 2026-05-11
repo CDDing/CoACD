@@ -91,6 +91,31 @@ jobs:
           otool -L build/lib_coacd.dylib | grep -q libomp || { echo "::error::libomp not linked"; exit 1; }
           echo "OK - libomp linked"
 
+      - name: Bundle libomp.dylib (macOS)
+        if: matrix.config.os == 'macos-15'
+        run: |
+          LIBOMP=$(brew --prefix libomp)
+          cp "$LIBOMP/lib/libomp.dylib" build/libomp.dylib
+          chmod +w build/libomp.dylib
+
+          install_name_tool -change \
+            "$LIBOMP/lib/libomp.dylib" \
+            @loader_path/libomp.dylib \
+            build/lib_coacd.dylib
+
+          install_name_tool -id \
+            @loader_path/libomp.dylib \
+            build/libomp.dylib
+
+          echo "=== final lib_coacd.dylib deps ==="
+          otool -L build/lib_coacd.dylib
+          echo "=== final libomp.dylib install_name ==="
+          otool -D build/libomp.dylib
+
+          otool -L build/lib_coacd.dylib | grep -q "@loader_path/libomp.dylib" \
+            || { echo "::error::rewrite failed"; exit 1; }
+          echo "OK - libomp bundled with @loader_path"
+
       - name: Verify OpenMP linkage (Windows)
         if: matrix.config.os == 'windows-2025'
         shell: pwsh
@@ -108,4 +133,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lib_coacd-${{ matrix.config.artifact }}
-          path: ${{ matrix.config.output }}
+          path: |
+            ${{ matrix.config.output }}
+            ${{ matrix.config.os == 'macos-15' && 'build/libomp.dylib' || '' }}
