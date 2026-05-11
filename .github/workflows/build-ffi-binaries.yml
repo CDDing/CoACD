@@ -1,0 +1,53 @@
+name: Build FFI Binaries
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - os: ubuntu-24.04
+            artifact: linux-x64
+            output: build/lib_coacd.so
+          - os: macos-15
+            artifact: macos-arm64
+            output: build/lib_coacd.dylib
+          - os: windows-2025
+            artifact: windows-x64
+            output: build/Release/lib_coacd.dll
+
+    name: Build ${{ matrix.config.artifact }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install macOS dependencies
+        if: matrix.config.os == 'macos-15'
+        run: brew install libomp
+
+      - name: Configure CMake
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          -DBUILD_SHARED_LIBS=OFF
+          -DOPENVDB_CORE_SHARED=OFF
+          -DTBB_TEST=OFF
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: Build _coacd
+        run: cmake --build build --target _coacd --config Release --parallel 4
+
+      - name: List outputs
+        shell: bash
+        run: find build -name "lib_coacd*" -type f
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lib_coacd-${{ matrix.config.artifact }}
+          path: ${{ matrix.config.output }}
